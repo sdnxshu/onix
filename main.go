@@ -7,13 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 )
 
@@ -21,13 +19,7 @@ import (
 // container, runs the provided commands inside it, then cleans up.
 func RunInContainer(ctx context.Context, repoURL string, commands []string) error {
 	// 1. Clone the repo to a temp dir on the host
-	// Use home dir instead of /tmp — Docker Desktop on macOS only bind-mounts
-	// directories under /Users by default; /tmp (/private/tmp) is blocked.
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("get home dir: %w", err)
-	}
-	repoDir, err := os.MkdirTemp(homeDir, "repo-*")
+	repoDir, err := os.MkdirTemp("", "repo-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -55,7 +47,6 @@ func RunInContainer(ctx context.Context, repoURL string, commands []string) erro
 	defer cli.Close()
 
 	// 3. Pull the Ubuntu image if not already present
-	// const dockerImage = "ubuntu:24.04"
 	const dockerImage = "golang:1.26-alpine"
 	fmt.Printf("Pulling image %s\n", dockerImage)
 	reader, err := cli.ImagePull(ctx, dockerImage, image.PullOptions{})
@@ -66,28 +57,6 @@ func RunInContainer(ctx context.Context, repoURL string, commands []string) erro
 	reader.Close()
 
 	// 4. Create the container with the repo bind-mounted at /workspace
-	// resp, err := cli.ContainerCreate(ctx,
-	// &container.Config{
-	// Image:      dockerImage,
-	// WorkingDir: "/workspace",
-	// Keep the container alive so we can exec into it
-	// Cmd: []string{"sleep", "infinity"},
-	// },
-	// &container.HostConfig{
-	// Mounts: []mount.Mount{
-	// {
-	// Type:   mount.TypeBind,
-	// Source: absRepoDir,
-	// Target: "/workspace",
-	// },
-	// },
-	// },
-	// nil, nil, "",
-	// )
-	// import (
-	// "github.com/docker/go-connections/nat"
-	// )
-
 	resp, err := cli.ContainerCreate(ctx,
 		&container.Config{
 			Image:      dockerImage,
@@ -163,22 +132,15 @@ func execInContainer(ctx context.Context, cli *client.Client, containerID, comma
 	}
 	defer attach.Close()
 
-	// Stream output — demultiplex Docker's combined stdout/stderr stream
-	if _, err := stdcopy.StdCopy(os.Stdout, os.Stderr, attach.Reader); err != nil && err != io.EOF {
+	// Stream output — Docker multiplexes stdout/stderr on one connection
+	if _, err := io.Copy(os.Stdout, attach.Reader); err != nil && err != io.EOF {
 		return fmt.Errorf("stream output: %w", err)
 	}
 
-	// Wait for the exec to fully finish before reading the exit code
-	var inspect container.ExecInspect
-	for {
-		inspect, err = cli.ContainerExecInspect(ctx, execID.ID)
-		if err != nil {
-			return fmt.Errorf("exec inspect: %w", err)
-		}
-		if !inspect.Running {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Check the exit code
+	inspect, err := cli.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return fmt.Errorf("exec inspect: %w", err)
 	}
 	if inspect.ExitCode != 0 {
 		return fmt.Errorf("exited with code %d", inspect.ExitCode)
@@ -192,10 +154,7 @@ func main() {
 		context.Background(),
 		"https://github.com/sdnxshu/basic-go-gin-app.git",
 		[]string{
-			// "apt-get update -qq && apt-get install -y -qq golang-go",
-			// "go build ./...",
-			// "go test ./...",
-			"go build -o app",
+			"go build -o app .",
 			"./app",
 		},
 	)
