@@ -47,7 +47,7 @@ func RunInContainer(ctx context.Context, repoURL string, commands []string) erro
 	defer cli.Close()
 
 	// 3. Pull the Ubuntu image if not already present
-	const dockerImage = "golang:1.26-alpine"
+	const dockerImage = "oven/bun:alpine"
 	fmt.Printf("Pulling image %s\n", dockerImage)
 	reader, err := cli.ImagePull(ctx, dockerImage, image.PullOptions{})
 	if err != nil {
@@ -64,8 +64,9 @@ func RunInContainer(ctx context.Context, repoURL string, commands []string) erro
 			Cmd:        []string{"sleep", "infinity"},
 			// Add this — ports the container listens on
 			ExposedPorts: nat.PortSet{
-				"8080/tcp": struct{}{},
-				"5432/tcp": struct{}{},
+				// "8080/tcp": struct{}{},
+				// "5432/tcp": struct{}{},
+				"3000/tcp": struct{}{},
 			},
 		},
 		&container.HostConfig{
@@ -78,8 +79,9 @@ func RunInContainer(ctx context.Context, repoURL string, commands []string) erro
 			},
 			// Add this — maps host port → container port
 			PortBindings: nat.PortMap{
-				"8080/tcp": []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "8080"}},
-				"5432/tcp": []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "5432"}},
+				// "8080/tcp": []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "8080"}},
+				// "5432/tcp": []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "5432"}},
+				"3000/tcp": []nat.PortBinding{{HostIP: "0.0.0.0", HostPort: "3000"}},
 			},
 		},
 		nil, nil, "",
@@ -152,10 +154,12 @@ func execInContainer(ctx context.Context, cli *client.Client, containerID, comma
 func main() {
 	err := RunInContainer(
 		context.Background(),
-		"https://github.com/sdnxshu/basic-go-gin-app.git",
+		"https://github.com/sdnxshu/jennings-test.git",
 		[]string{
-			"go build -o app .",
-			"./app",
+			// "go build -o app .",
+			// "./app",
+			"bun install",
+			"bun run dev",
 		},
 	)
 	if err != nil {
